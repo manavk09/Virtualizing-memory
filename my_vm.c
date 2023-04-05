@@ -1,5 +1,16 @@
 #include "my_vm.h"
 
+unsigned char* physical_mem;
+unsigned char* physical_bitmap;
+unsigned char* virtual_bitmap;
+
+unsigned int num_physical_pages;
+unsigned int num_virtual_pages;
+
+unsigned int num_vpn_bits;
+unsigned int num_offset_bits;
+unsigned int num_page_directory_bits;
+
 /*
 Function responsible for allocating and setting your physical memory 
 */
@@ -12,6 +23,24 @@ void set_physical_mem() {
     //HINT: Also calculate the number of physical and virtual pages and allocate
     //virtual and physical bitmaps and initialize them
 
+    //Calculate number of pages
+    num_physical_pages = MEMSIZE / PGSIZE;
+    num_virtual_pages = MAX_MEMSIZE / PGSIZE;
+    num_vpn_bits = 32 - log2(PGSIZE);
+    num_offset_bits = 32 - num_vpn_bits;
+
+    //Set page directory bits
+    num_page_directory_bits = 10;
+
+    //Map physical memory
+    physical_mem = mmap(NULL, MEMSIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
+
+    int virtual_bitmap_size = (num_virtual_pages + 7) / 8;
+    int physical_bitmap_size = (num_physical_pages + 7) / 8;
+
+    virtual_bitmap = calloc(virtual_bitmap_size, sizeof(unsigned char));
+    physical_bitmap = calloc(physical_bitmap_size, sizeof(unsigned char));
+    
 }
 
 
@@ -77,9 +106,33 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * translation exists, then you can return physical address from the TLB.
     */
 
+    unsigned int vpn = (unsigned int) va >> num_offset_bits;
+    unsigned int offset = (unsigned int) va & (int) pow(2, num_offset_bits);
 
-    //If translation not successful, then return NULL
-    return NULL; 
+    //Get page directory and page table indecies
+    unsigned int page_directory_index = (vpn >> num_page_directory_bits) & 0x3FF;
+    unsigned int page_table_index = vpn & 0x3FF;
+    
+    //Get page directory entry
+    pde_t pde = pgdir[page_directory_index];
+
+    //Check if the page directory entry is present
+    if (!(pde & 1))
+        return NULL;
+
+    unsigned int pde_page_frame_number = pde & 0xFFFFF000;
+
+    pte_t pte = pde_page_frame_number + (page_table_index * sizeof(pte_t));
+
+    if(!(pte & 1))
+        return NULL;
+
+    unsigned int pte_page_frame_number = pte & 0xFFFFF000;
+
+    pte_t* physical_addr = (pte_t*) (pte_page_frame_number | offset);
+
+    return physical_addr;
+
 }
 
 
