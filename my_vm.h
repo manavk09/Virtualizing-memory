@@ -51,4 +51,6 @@ void get_value(void *va, void *val, int size);
 void mat_mult(void *mat1, void *mat2, int size, void *answer);
 void print_TLB_missrate();
 
+void set_bit(char* bitmap, unsigned int bit, unsigned int value);
+
 #endif
