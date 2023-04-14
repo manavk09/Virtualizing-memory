@@ -4,14 +4,80 @@ unsigned char* physical_mem;
 unsigned char* physical_bitmap;
 unsigned char* virtual_bitmap;
 
+pde_t* page_directory;
+
 unsigned int num_physical_pages;
 unsigned int num_virtual_pages;
 
 unsigned int num_vpn_bits;
 unsigned int num_offset_bits;
-unsigned int num_page_directory_bits;
 
-pde_t* page_directory;
+unsigned int num_va_space_bits;
+unsigned int num_pa_space_bits;
+unsigned int max_bits;
+
+unsigned int max_pages_bits;
+unsigned int num_page_directory_bits;
+unsigned int num_page_table_bits;
+
+void init_bit_values() {
+    num_va_space_bits = 32;
+    num_pa_space_bits = num_bits_in_value(MEMSIZE);
+    //max_bits = ((num_va_space_bits) < (num_pa_space_bits)) ? (num_va_space_bits) : (num_pa_space_bits); 
+    max_bits = 32;
+    num_offset_bits = num_bits_in_value(PGSIZE);
+    max_pages_bits = max_bits - num_offset_bits;
+    num_vpn_bits = max_bits - num_offset_bits;
+
+    num_page_table_bits = num_bits_in_value(PGSIZE / sizeof(pte_t));
+    num_page_directory_bits = max_pages_bits - num_page_table_bits;
+
+}
+
+void print_bit_values() {
+    printf("Bit values:\n");
+    printf("---------------------------\n");
+    printf("VA space bits: %d\n", num_va_space_bits);
+    printf("PA space bits: %d\n", num_pa_space_bits);
+    printf("Max bits: %d\n", max_bits);
+    printf("Offset bits: %d\n", num_offset_bits);
+    printf("Max pages bits: %d\n", max_pages_bits);
+    printf("Page Table Bits: %d\n", num_page_table_bits);
+    printf("Page Directory Bits: %d\n", num_page_directory_bits);
+    printf("---------------------------\n");
+}
+
+unsigned int num_bits_in_value(unsigned int value) {
+    int bits = 0;
+    while(value >>= 1) {
+        bits++;
+    }
+    return bits;
+}
+
+void init_page_tables() {
+    //Set page directory base
+    unsigned long nextFreePage = next_free_page(physical_bitmap);
+    set_bit(physical_bitmap, nextFreePage, 1);
+    page_directory = (pde_t*) (nextFreePage * PGSIZE + physical_mem);
+
+    //Allocate page tables and update bitmap
+    for(unsigned long i = 0; i < (1 << num_page_directory_bits); i++) {
+        nextFreePage = next_free_page(physical_bitmap);
+        set_bit(physical_bitmap, nextFreePage, 1);
+    }
+
+    //Set 0x0 as used in memory
+    set_bit(virtual_bitmap, 0, 1);
+}
+
+unsigned long next_free_page(char* bitmap) {
+    for(int i = 0; i < num_physical_pages; i++) {
+        if(!isAllocated(physical_bitmap, i)) {
+            return i;
+        }
+    }
+}
 
 /*
 Function responsible for allocating and setting your physical memory 
@@ -25,17 +91,22 @@ void set_physical_mem() {
     //HINT: Also calculate the number of physical and virtual pages and allocate
     //virtual and physical bitmaps and initialize them
 
+    //If bit values haven't been set, set them
+    if(num_va_space_bits == 0) {
+        init_bit_values();
+    }
+
+    //Create physical memory
+    physical_mem = malloc(MEMSIZE);
+
     //Calculate number of pages
     num_physical_pages = MEMSIZE / PGSIZE;
     num_virtual_pages = MAX_MEMSIZE / PGSIZE;
-    num_vpn_bits = 32 - log2(PGSIZE);
-    num_offset_bits = 32 - num_vpn_bits;
 
-    //Set page directory bits
-    num_page_directory_bits = 10;
-
-    //Map physical memory
-    physical_mem = mmap(NULL, MEMSIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
+    //If page directory isn't set, set it
+    if(page_directory == NULL) {
+        init_page_tables();
+    }
 
     int virtual_bitmap_size = (num_virtual_pages + 7) / 8;
     int physical_bitmap_size = (num_physical_pages + 7) / 8;
@@ -108,32 +179,20 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * translation exists, then you can return physical address from the TLB.
     */
 
-    unsigned int vpn = (unsigned int) va >> num_offset_bits;
-    unsigned int offset = (unsigned int) va & (int) pow(2, num_offset_bits);
+    unsigned long vpn = ((unsigned long) va) >> num_offset_bits;
+    unsigned long offset = ((unsigned long) va) & ((1 << num_offset_bits) - 1);
 
     //Get page directory and page table indecies
-    unsigned int page_directory_index = (vpn >> num_page_directory_bits) & 0x3FF;
-    unsigned int page_table_index = vpn & 0x3FF;
+    unsigned long page_table_index = vpn & ((1 << num_page_table_bits) - 1);
+    unsigned long page_directory_index = (vpn >> num_page_table_bits) & ((1 << num_page_directory_bits) - 1);
     
     //Get page directory entry
-    pde_t pde = pgdir[page_directory_index];
+    pde_t* pde = pgdir + page_directory_index;
 
-    //Check if the page directory entry is present
-    if (!(pde & 1))
-        return NULL;
+    //Get page table entry
+    pte_t* pte = pde + page_table_index;
 
-    unsigned int pde_page_frame_number = pde & 0xFFFFF000;
-
-    pte_t pte = pde_page_frame_number + (page_table_index * sizeof(pte_t));
-
-    if(!(pte & 1))
-        return NULL;
-
-    unsigned int pte_page_frame_number = pte & 0xFFFFF000;
-
-    pte_t* physical_addr = (pte_t*) (pte_page_frame_number | offset);
-
-    return physical_addr;
+    return pte;
 
 }
 
@@ -152,7 +211,16 @@ page_map(pde_t *pgdir, void *va, void *pa)
     and page table (2nd-level) indices. If no mapping exists, set the
     virtual to physical mapping */
 
-    return -1;
+    unsigned long bit_index = (((unsigned long) va) >> num_offset_bits);
+    //Check if address is mapped in bitmap
+    if(get_bit(virtual_bitmap, bit_index)) {
+        return 0;
+    }
+
+    set_bit(virtual_bitmap, bit_index, 1);
+    *(translate(page_directory, va)) = (pte_t) pa;
+    return 1;
+
 }
 
 
@@ -199,10 +267,6 @@ void *t_malloc(unsigned int num_bytes) {
 
     if(!physical_mem) {
         set_physical_mem();
-    }
-
-    if(!page_directory) {
-        page_directory = malloc(PGSIZE);
     }
 
     unsigned int num_pages = (num_bytes + PGSIZE - 1) / PGSIZE;
@@ -333,8 +397,6 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
     }
 }
 
-
-
 void set_bit(char* bitmap, unsigned int index, unsigned int value) {
     unsigned int byte_index = index / 8;
     unsigned int pos = index % 8;
@@ -346,6 +408,12 @@ void set_bit(char* bitmap, unsigned int index, unsigned int value) {
     }
 }
 
+int get_bit(char* bitmap, unsigned int index) {
+    unsigned int byte_index = index / 8;
+    unsigned int pos = index % 8;
+    return (bitmap[byte_index] & (1 << pos)) != 0;
+}
+
 bool isAllocated(char* bitmap, int vpn) {
     // Calculate the byte index and bit offset within the byte for the given VPN
     int byte_index = vpn / 8;
@@ -353,4 +421,10 @@ bool isAllocated(char* bitmap, int vpn) {
     
     // Check if the corresponding bit in the bitmap is set
     return (bitmap[byte_index] & (1 << pos)) != 0;
+}
+
+int main() {
+    init_bit_values();
+    print_bit_values();
+    set_physical_mem();
 }

@@ -51,6 +51,13 @@ void get_value(void *va, void *val, int size);
 void mat_mult(void *mat1, void *mat2, int size, void *answer);
 void print_TLB_missrate();
 
-void set_bit(char* bitmap, unsigned int bit, unsigned int value);
+void set_bit(char* bitmap, unsigned int index, unsigned int value);
+int get_bit(char* bitmap, unsigned int index);
+bool isAllocated(char* bitmap, int vpn);
+void init_bit_values();
+void print_bit_values();
+unsigned int num_bits_in_value(unsigned int value);
+void init_page_tables();
+unsigned long next_free_page(char* bitmap);
 
 #endif
