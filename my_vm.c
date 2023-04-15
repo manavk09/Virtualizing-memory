@@ -59,7 +59,7 @@ void init_page_tables() {
     //Set page directory base
     unsigned long nextFreePage = next_free_page(physical_bitmap);
     set_bit(physical_bitmap, nextFreePage, 1);
-    page_directory = (pde_t*) (nextFreePage * PGSIZE + physical_mem);
+    page_directory = (pde_t*) (get_physical_addr_from_bit(nextFreePage));
 
     //Allocate page tables and update bitmap
     for(unsigned long i = 0; i < (1 << num_page_directory_bits); i++) {
@@ -71,12 +71,22 @@ void init_page_tables() {
     set_bit(virtual_bitmap, 0, 1);
 }
 
-unsigned long next_free_page(char* bitmap) {
-    for(int i = 0; i < num_physical_pages; i++) {
-        if(!isAllocated(physical_bitmap, i)) {
-            return i;
+unsigned long next_free_page(unsigned char* bitmap) {
+    if(bitmap == physical_bitmap) {
+        for(int i = 0; i < num_physical_pages; i++) {
+            if(!get_bit(bitmap, i)) {
+                return i;
+            }
         }
     }
+    else {
+        for(int i = 0; i < num_virtual_pages; i++) {
+            if(!get_bit(bitmap, i)) {
+                return i;
+            }
+        }
+    }
+    
 }
 
 /*
@@ -103,16 +113,16 @@ void set_physical_mem() {
     num_physical_pages = MEMSIZE / PGSIZE;
     num_virtual_pages = MAX_MEMSIZE / PGSIZE;
 
-    //If page directory isn't set, set it
-    if(page_directory == NULL) {
-        init_page_tables();
-    }
-
     int virtual_bitmap_size = (num_virtual_pages + 7) / 8;
     int physical_bitmap_size = (num_physical_pages + 7) / 8;
 
     virtual_bitmap = calloc(virtual_bitmap_size, sizeof(unsigned char));
     physical_bitmap = calloc(physical_bitmap_size, sizeof(unsigned char));
+
+    //If page directory isn't set, set it
+    if(page_directory == NULL) {
+        init_page_tables();
+    }
     
 }
 
@@ -229,16 +239,16 @@ page_map(pde_t *pgdir, void *va, void *pa)
 void *get_next_avail(int num_pages) {
  
     //Use virtual address bitmap to find the next free page
-    unsigned int start_page = 0;
+    unsigned long start_page = 0;
     unsigned int num_free_pages = 0;
     for(int i = 0; i < num_virtual_pages; i++) {
-        if(!isAllocated(virtual_bitmap, i)) {
+        if(!get_bit(virtual_bitmap, i)) {
             if(num_free_pages == 0) {
                 start_page = i;
             }
             num_free_pages++;
             if(num_free_pages == num_pages) {
-                return (void*)(start_page * PGSIZE);
+                return (void*) (start_page << num_offset_bits);
             }
         }
         else {
@@ -265,30 +275,29 @@ void *t_malloc(unsigned int num_bytes) {
     * have to mark which physical pages are used. 
     */
 
+    //Initialize physical memory is it hasn't been
     if(!physical_mem) {
         set_physical_mem();
     }
 
     unsigned int num_pages = (num_bytes + PGSIZE - 1) / PGSIZE;
-
+    
+    //Check if there are available pages
     void* va = get_next_avail(num_pages);
     if(!va) {
         return NULL;
     }
 
-    // Update the bitmaps
-    for (int i = 0; i < num_pages; i++) {
-        unsigned int vpn = ((unsigned int) va + i * PGSIZE) >> num_offset_bits;
-        unsigned int physical_page_num = ((unsigned int) physical_mem + i * PGSIZE) >> num_offset_bits;
-        set_bit(virtual_bitmap, vpn, 1);
-        set_bit(physical_bitmap, physical_page_num, 1);
+    void* pa = get_next_avail_physical(num_pages);
+    if(!pa) {
+        return NULL;
     }
 
-    // Map the new pages to the given virtual address
     for (int i = 0; i < num_pages; i++) {
-        unsigned int vpn = ((unsigned int) va + i * PGSIZE);
-        unsigned int physical_page_num = ((unsigned int)physical_mem + i * PGSIZE) >> num_offset_bits;
-        page_map(page_directory, (void *) vpn, (void *)physical_page_num);
+        unsigned long nextFreePage = next_free_page(physical_bitmap);
+        set_bit(physical_bitmap, nextFreePage, 1);
+        pa = get_physical_addr_from_bit(nextFreePage);
+        page_map(page_directory, va + i * PGSIZE, pa);
     }
 
     return va;
@@ -312,22 +321,25 @@ void t_free(void *va, int size) {
         unsigned int vpn = (unsigned int) va >> num_offset_bits;
 
         //Check if page is allocated
-        if(!isAllocated(virtual_bitmap, vpn)) {
+        if(!get_bit(virtual_bitmap, vpn)) {
             return;
         }
 
         //Get physical page number
         pte_t *pte = translate(page_directory, va);
-        unsigned int ppn = (*pte) >> num_offset_bits;
+        unsigned long ppn = (*pte) >> num_offset_bits;
 
-        //Free physical page
+        //Free physical page and update physical bitmap
+        set_bit(physical_bitmap, ppn, 0);
         physical_bitmap[ppn / 8] &= ~(1 << (ppn % 8));
-        memset(&physical_mem[ppn * PGSIZE], 0, PGSIZE);
+        memset((void*) (physical_mem + ppn * PGSIZE), 0, PGSIZE);
         *pte = 0;
 
-        virtual_bitmap[vpn / 8] &= ~(1 << (vpn % 8));
+        //Update virtual bitmap
+        set_bit(virtual_bitmap, vpn, 0);
 
-        va = (void*) ((unsigned int) va + PGSIZE);
+        //Set virtual address to the next page
+        va = (void*) ((unsigned long) va + PGSIZE);
     }
     
 }
@@ -397,7 +409,7 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
     }
 }
 
-void set_bit(char* bitmap, unsigned int index, unsigned int value) {
+void set_bit(unsigned char* bitmap, unsigned long index, unsigned int value) {
     unsigned int byte_index = index / 8;
     unsigned int pos = index % 8;
 
@@ -408,23 +420,68 @@ void set_bit(char* bitmap, unsigned int index, unsigned int value) {
     }
 }
 
-int get_bit(char* bitmap, unsigned int index) {
+int get_bit(unsigned char* bitmap, unsigned long index) {
     unsigned int byte_index = index / 8;
     unsigned int pos = index % 8;
     return (bitmap[byte_index] & (1 << pos)) != 0;
 }
 
-bool isAllocated(char* bitmap, int vpn) {
-    // Calculate the byte index and bit offset within the byte for the given VPN
-    int byte_index = vpn / 8;
-    int pos = vpn % 8;
-    
-    // Check if the corresponding bit in the bitmap is set
-    return (bitmap[byte_index] & (1 << pos)) != 0;
+void* get_physical_addr_from_bit(unsigned long pageNumInBitmap) {
+    return (void*) (pageNumInBitmap * PGSIZE + physical_mem);
+}
+
+void *get_next_avail_physical(int num_pages) {
+ 
+    //Use physical address bitmap to find the next free page
+    unsigned long start_page = 0;
+    unsigned int num_free_pages = 0;
+    for(int i = 0; i < num_physical_pages; i++) {
+        if(!get_bit(physical_bitmap, i)) {
+            if(num_free_pages == 0) {
+                start_page = i;
+            }
+            num_free_pages++;
+            if(num_free_pages == num_pages) {
+                return (void*) (start_page << num_offset_bits);
+            }
+        }
+        else {
+            num_free_pages = 0;
+        }
+    }
+    return NULL;
 }
 
 int main() {
-    init_bit_values();
-    print_bit_values();
     set_physical_mem();
+    print_bit_values();
+
+    // //Tests translate and page map
+    // void* va = get_next_avail(1);
+    // void* pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
+    // printf("VA: %p\n", va);
+    // printf("PA: %p\n", pa);
+    
+    // printf("Page map result: %s\n", page_map(page_directory, va, pa) ? "Success" : "Fail");
+
+    // printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
+
+    // va = get_next_avail(1);
+    // pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
+    // printf("VA: %p\n", va);
+    // printf("PA: %p\n", pa);
+    // //Tests translate and page map
+
+    void* va = get_next_avail(1);
+    void* pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
+    printf("VA: %p\n", va);
+    printf("PA: %p\n", pa);
+
+    int* gamer = t_malloc(sizeof(int));
+    printf("Did malloc, returned virtual address: %p\n", gamer);
+
+    va = get_next_avail(1);
+    pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
+    printf("VA: %p\n", va);
+    printf("PA: %p\n", pa);
 }
