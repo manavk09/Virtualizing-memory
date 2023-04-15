@@ -512,10 +512,6 @@ int main() {
     int* gamer = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer);
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
-<<<<<<< HEAD
-=======
-    // print_list();
->>>>>>> dc45ba9fa907f3b79d10e77e9f05ec8232b37f1a
 
     va = get_next_avail(1);
     pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
@@ -525,12 +521,7 @@ int main() {
     void* gamer2 = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer2);
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
-<<<<<<< HEAD
 
     t_free(gamer2, sizeof(int));
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
-=======
-    // print_list();
-    
->>>>>>> dc45ba9fa907f3b79d10e77e9f05ec8232b37f1a
 }
