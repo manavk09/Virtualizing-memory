@@ -265,7 +265,6 @@ pte_t *translate(pde_t *pgdir, void *va) {
     tlb_lookups++;
     //hit
     if(tlb_result != NULL){
-        printf("i am in tlb\n");
         return tlb_result;
     }
 
@@ -401,6 +400,15 @@ void t_free(void *va, int size) {
 
     //Number of pages to free
     unsigned int num_pages = (size + PGSIZE - 1) / PGSIZE;
+
+    //Check if that many pages are allocated in the virtual bitmap
+    for (int i = 0; i < num_pages; i++) {
+        unsigned int vpn = (unsigned int) va >> num_offset_bits;
+        if(!get_bit(virtual_bitmap, vpn)) {
+            return;
+        }
+        vpn += PGSIZE;
+    }
     
     for (int i = 0; i < num_pages; i++) {
         unsigned int vpn = (unsigned int) va >> num_offset_bits;
@@ -416,8 +424,6 @@ void t_free(void *va, int size) {
 
         //Free physical page and update physical bitmap
         set_bit(physical_bitmap, ppn, 0);
-        physical_bitmap[ppn / 8] &= ~(1 << (ppn % 8));
-        memset((void*) (physical_mem + ppn * PGSIZE), 0, PGSIZE);
         *pte = 0;
 
         //Update virtual bitmap
@@ -574,16 +580,16 @@ int main() {
     int* gamer = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer);
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
-    print_list();
 
     va = get_next_avail(1);
     pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
     printf("VA: %p\n", va);
     printf("PA: %p\n", pa);
 
-    int* gamer2 = t_malloc(sizeof(int));
+    void* gamer2 = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer2);
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
-    print_list();
-    
+
+    t_free(gamer2, sizeof(int));
+    printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
 }
