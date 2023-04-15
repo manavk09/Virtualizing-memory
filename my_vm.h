@@ -64,5 +64,9 @@ void init_page_tables();
 unsigned long next_free_page(unsigned char* bitmap);
 void* get_physical_addr_from_bit(unsigned long pageNumInBitmap);
 void *get_next_avail_physical(int num_pages);
+tlb* search_tlb_list(void *va);
+void remove_and_add(tlb* node);
+void remove_end();
+
 
 #endif

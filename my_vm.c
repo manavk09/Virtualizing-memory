@@ -193,7 +193,7 @@ check_TLB(void *va) {
     
     if(returned == NULL){
         //tlb miss
-        return -1;
+        return NULL;
     }
     else{
         remove_and_add(returned);
@@ -261,10 +261,11 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * Part 2 HINT: Check the TLB before performing the translation. If
     * translation exists, then you can return physical address from the TLB.
     */ 
-    pte_t *tlb_result = check_in_tlb(va);
+    pte_t *tlb_result = check_TLB(va);
     tlb_lookups++;
     //hit
-    if(tlb_result != -1){
+    if(tlb_result != NULL){
+        printf("i am in tlb\n");
         return tlb_result;
     }
 
@@ -536,6 +537,15 @@ void *get_next_avail_physical(int num_pages) {
     return NULL;
 }
 
+void print_list(){
+    tlb* temp = tlb_head;
+    while(temp != NULL){
+        printf("%p->", temp->va);
+        temp = temp->next;
+    }
+    printf("\n");
+}
+
 int main() {
     set_physical_mem();
     print_bit_values();
@@ -563,9 +573,17 @@ int main() {
 
     int* gamer = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer);
+    printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
+    print_list();
 
     va = get_next_avail(1);
     pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
     printf("VA: %p\n", va);
     printf("PA: %p\n", pa);
+
+    int* gamer2 = t_malloc(sizeof(int));
+    printf("Did malloc, returned virtual address: %p\n", gamer2);
+    printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
+    print_list();
+    
 }
