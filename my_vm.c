@@ -21,8 +21,6 @@ unsigned int num_page_directory_bits;
 unsigned int num_page_table_bits;
 
 tlb tlb_arr[TLB_ENTRIES];
-
-tlb *tlb_head;
 unsigned long tlb_count = 0;
 unsigned long tlb_lookups = 0;
 unsigned long tlb_misses = 0;
@@ -479,15 +477,6 @@ void *get_next_avail_physical(int num_pages) {
     }
     return NULL;
 }
-
-// void print_list(){
-//     tlb* temp = tlb_head;
-//     while(temp != NULL){
-//         printf("%p->", temp->va);
-//         temp = temp->next;
-//     }
-//     printf("\n");
-// }
 
 int main() {
     set_physical_mem();
