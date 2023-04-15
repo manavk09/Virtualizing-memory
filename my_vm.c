@@ -20,6 +20,11 @@ unsigned int max_pages_bits;
 unsigned int num_page_directory_bits;
 unsigned int num_page_table_bits;
 
+tlb *tlb_head;
+unsigned long tlb_count = 0;
+unsigned long tlb_lookups = 0;
+unsigned long tlb_misses = 0;
+
 void init_bit_values() {
     num_va_space_bits = 32;
     num_pa_space_bits = num_bits_in_value(MEMSIZE);
@@ -113,6 +118,7 @@ void set_physical_mem() {
 
     virtual_bitmap = calloc(virtual_bitmap_size, sizeof(unsigned char));
     physical_bitmap = calloc(physical_bitmap_size, sizeof(unsigned char));
+
     
 }
 
@@ -126,8 +132,42 @@ add_TLB(void *va, void *pa)
 {
 
     /*Part 2 HINT: Add a virtual to physical page translation to the TLB */
+    tlb *new_tlb = malloc(sizeof(tlb));
+    new_tlb->va = va;
+    new_tlb->pa = pa;
+    new_tlb->next = NULL;
+
+    //base case
+    if(tlb_head == NULL){
+        tlb_head = new_tlb;
+        tlb_count++;
+        return 1;
+    }
+    else{
+        if(tlb_count >= TLB_ENTRIES){
+            //first remove the end and then add
+            remove_end();
+        }
+        tlb *temp = tlb_head;
+        tlb_head = new_tlb;
+        new_tlb->next = temp;
+        tlb_count++;
+        return 1;
+    }
 
     return -1;
+}
+
+void remove_end(){
+    tlb *temp = tlb_head;
+    while(temp->next->next != NULL){
+        temp = temp->next;
+    }
+
+    //delete temp.next
+    free(temp->next);
+    temp->next = NULL;
+    tlb_count--;
 }
 
 
@@ -140,12 +180,47 @@ pte_t *
 check_TLB(void *va) {
 
     /* Part 2: TLB lookup code here */
-
-
+    tlb* returned = search_tlb_list(va);
+    
+    if(returned == NULL){
+        //tlb miss
+        return -1;
+    }
+    else{
+        remove_and_add(returned);
+        return (pte_t*) returned->pa;
+    }
 
    /*This function should return a pte_t pointer*/
 }
+void remove_and_add(tlb* node){
+    tlb* temp = tlb_head;
+    if(temp == node){
+        return;
+    }
+    
+    while(temp->next != node){
+        temp = temp->next;
+    }
 
+    tlb* node_to_front = temp->next; 
+    temp->next = node_to_front->next; 
+
+    node_to_front->next = tlb_head;
+    tlb_head = node_to_front;
+}
+
+
+tlb* search_tlb_list(void *va){
+    tlb* temp = tlb_head;
+    while(temp != NULL){
+        if(temp->va == va){
+            return temp;
+        }
+        temp = temp->next;
+    }
+    return NULL;
+}
 
 /*
  * Part 2: Print TLB miss rate.
@@ -155,10 +230,9 @@ void
 print_TLB_missrate()
 {
     double miss_rate = 0;	
+    miss_rate = (tlb_misses / tlb_lookups) * 100;
 
     /*Part 2 Code here to calculate and print the TLB miss rate*/
-
-
 
 
     fprintf(stderr, "TLB miss rate %lf \n", miss_rate);
@@ -177,8 +251,15 @@ pte_t *translate(pde_t *pgdir, void *va) {
     *
     * Part 2 HINT: Check the TLB before performing the translation. If
     * translation exists, then you can return physical address from the TLB.
-    */
+    */ 
+    pte_t *tlb_result = check_in_tlb(va);
+    tlb_lookups++;
+    //hit
+    if(tlb_result != -1){
+        return tlb_result;
+    }
 
+    tlb_misses++;
     unsigned long vpn = ((unsigned long) va) >> num_offset_bits;
     unsigned long offset = ((unsigned long) va) & ((1 << num_offset_bits) - 1);
 
@@ -191,6 +272,10 @@ pte_t *translate(pde_t *pgdir, void *va) {
 
     //Get page table entry
     pte_t* pte = pde + page_table_index;
+
+    //assuming pte is physical addr **CHECK THIS
+    add_TLB(va,pte);
+
 
     return pte;
 
