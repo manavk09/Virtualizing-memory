@@ -20,7 +20,7 @@ unsigned int max_pages_bits;
 unsigned int num_page_directory_bits;
 unsigned int num_page_table_bits;
 
-tlb *tlb_head;
+tlb tlb_arr[TLB_ENTRIES];
 unsigned long tlb_count = 0;
 unsigned long tlb_lookups = 0;
 unsigned long tlb_misses = 0;
@@ -141,43 +141,20 @@ add_TLB(void *va, void *pa)
 {
 
     /*Part 2 HINT: Add a virtual to physical page translation to the TLB */
-    tlb *new_tlb = malloc(sizeof(tlb));
-    new_tlb->va = va;
-    new_tlb->pa = pa;
-    new_tlb->next = NULL;
+    unsigned long index = (unsigned long) get_tlb_index(va);
+    tlb_arr[index].va = va;
+    tlb_arr[index].pa = pa;
+    return 1;
 
-    //base case
-    if(tlb_head == NULL){
-        tlb_head = new_tlb;
-        tlb_count++;
-        return 1;
-    }
-    else{
-        if(tlb_count >= TLB_ENTRIES){
-            //first remove the end and then add
-            remove_end();
-        }
-        tlb *temp = tlb_head;
-        tlb_head = new_tlb;
-        new_tlb->next = temp;
-        tlb_count++;
-        return 1;
-    }
 
-    return -1;
+    // return -1;
+}
+unsigned long get_tlb_index(void *va){
+    unsigned long vpn =  ((unsigned long) va) >> num_offset_bits;
+    unsigned long index = vpn % TLB_ENTRIES;
+    return index;
 }
 
-void remove_end(){
-    tlb *temp = tlb_head;
-    while(temp->next->next != NULL){
-        temp = temp->next;
-    }
-
-    //delete temp.next
-    free(temp->next);
-    temp->next = NULL;
-    tlb_count--;
-}
 
 
 /*
@@ -189,46 +166,10 @@ pte_t *
 check_TLB(void *va) {
 
     /* Part 2: TLB lookup code here */
-    tlb* returned = search_tlb_list(va);
-    
-    if(returned == NULL){
-        //tlb miss
-        return NULL;
-    }
-    else{
-        remove_and_add(returned);
-        return (pte_t*) returned->pa;
-    }
+    unsigned long index = get_tlb_index(va);
+    return (pte_t*) tlb_arr[index].pa;
 
    /*This function should return a pte_t pointer*/
-}
-void remove_and_add(tlb* node){
-    tlb* temp = tlb_head;
-    if(temp == node){
-        return;
-    }
-    
-    while(temp->next != node){
-        temp = temp->next;
-    }
-
-    tlb* node_to_front = temp->next; 
-    temp->next = node_to_front->next; 
-
-    node_to_front->next = tlb_head;
-    tlb_head = node_to_front;
-}
-
-
-tlb* search_tlb_list(void *va){
-    tlb* temp = tlb_head;
-    while(temp != NULL){
-        if(temp->va == va){
-            return temp;
-        }
-        temp = temp->next;
-    }
-    return NULL;
 }
 
 /*
@@ -543,15 +484,6 @@ void *get_next_avail_physical(int num_pages) {
     return NULL;
 }
 
-void print_list(){
-    tlb* temp = tlb_head;
-    while(temp != NULL){
-        printf("%p->", temp->va);
-        temp = temp->next;
-    }
-    printf("\n");
-}
-
 int main() {
     set_physical_mem();
     print_bit_values();
@@ -580,6 +512,10 @@ int main() {
     int* gamer = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer);
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
+<<<<<<< HEAD
+=======
+    // print_list();
+>>>>>>> dc45ba9fa907f3b79d10e77e9f05ec8232b37f1a
 
     va = get_next_avail(1);
     pa = get_physical_addr_from_bit(next_free_page(physical_bitmap));
@@ -589,7 +525,12 @@ int main() {
     void* gamer2 = t_malloc(sizeof(int));
     printf("Did malloc, returned virtual address: %p\n", gamer2);
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
+<<<<<<< HEAD
 
     t_free(gamer2, sizeof(int));
     printf("Translate VA[%p] result: %p\n", va, *translate(page_directory, va));
+=======
+    // print_list();
+    
+>>>>>>> dc45ba9fa907f3b79d10e77e9f05ec8232b37f1a
 }
