@@ -63,6 +63,7 @@ unsigned int num_bits_in_value(unsigned int value);
 void init_page_tables();
 unsigned long next_free_page(unsigned char* bitmap);
 void* get_physical_addr_from_bit(unsigned long pageNumInBitmap);
+unsigned long get_bit_position_from_pointer(void* pa);
 void *get_next_avail_physical(int num_pages);
 unsigned long get_tlb_index(void *va);
 
