@@ -169,7 +169,10 @@ check_TLB(void *va) {
 
     /* Part 2: TLB lookup code here */
     unsigned long index = get_tlb_index(va);
-    if(va == tlb_arr[index].va) {
+    //printf("Check Index: %ld, va: %p, tlb_arr_va: %p\n", index, va, tlb_arr[index].va);
+    unsigned long va_vpn = ((unsigned long) va) >> num_offset_bits;
+    unsigned long tlb_vpn = ((unsigned long) tlb_arr[index].va) >> num_offset_bits;
+    if(va_vpn == tlb_vpn) {
         return (pte_t*) tlb_arr[index].pa;
     }
     else {
