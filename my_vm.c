@@ -24,6 +24,7 @@ tlb tlb_arr[TLB_ENTRIES];
 unsigned long tlb_count = 0;
 unsigned long tlb_lookups = 0;
 unsigned long tlb_misses = 0;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 void init_bit_values() {
     num_va_space_bits = 32;
@@ -123,6 +124,7 @@ void set_physical_mem() {
 
     virtual_bitmap = calloc(virtual_bitmap_size, sizeof(unsigned char));
     physical_bitmap = calloc(physical_bitmap_size, sizeof(unsigned char));
+    //pthread_mutex_init(&lock, NULL);
 
     //If page directory isn't set, set it
     if(page_directory == NULL) {
@@ -301,20 +303,25 @@ void *t_malloc(unsigned int num_bytes) {
     */
 
     //Initialize physical memory is it hasn't been
+    pthread_mutex_lock(&lock);
     if(!physical_mem) {
         set_physical_mem();
+        
     }
+    
 
     unsigned int num_pages = (num_bytes + PGSIZE - 1) / PGSIZE;
     
     //Check if there are available pages
     void* va = get_next_avail(num_pages);
     if(!va) {
+        pthread_mutex_unlock(&lock);
         return NULL;
     }
 
     void* pa = get_next_avail_physical(num_pages);
     if(!pa) {
+        pthread_mutex_unlock(&lock);
         return NULL;
     }
 
@@ -324,7 +331,7 @@ void *t_malloc(unsigned int num_bytes) {
         pa = get_physical_addr_from_bit(nextFreePage);
         page_map(page_directory, va + i * PGSIZE, pa);
     }
-
+    pthread_mutex_unlock(&lock);
     return va;
 }
 
@@ -340,12 +347,14 @@ void t_free(void *va, int size) {
      */
 
     //Number of pages to free
+    pthread_mutex_lock(&lock);
     unsigned int num_pages = (size + PGSIZE - 1) / PGSIZE;
 
     //Check if num_pages pages are allocated in the virtual bitmap
     unsigned long vpn = (unsigned long) va >> num_offset_bits;
     for (int i = 0; i < num_pages; i++) {
         if(!get_bit(virtual_bitmap, vpn)) {
+            pthread_mutex_unlock(&lock);
             return;
         }
         vpn++;
@@ -372,7 +381,7 @@ void t_free(void *va, int size) {
         //Set virtual address to the next page
         va = (void*) ((unsigned long) va + PGSIZE);
     }
-    
+    pthread_mutex_unlock(&lock);
 }
 
 
@@ -389,6 +398,7 @@ int put_value(void *va, void *val, int size) {
      */
     
     //Number of pages needed
+    pthread_mutex_lock(&lock);
     unsigned int num_pages = (size + PGSIZE - 1) / PGSIZE;
     unsigned long bytesRemaining = size;
     unsigned long bytesToWrite;
@@ -397,6 +407,7 @@ int put_value(void *va, void *val, int size) {
     unsigned long vpn = (unsigned long) va >> num_offset_bits;
     for (int i = 0; i < num_pages; i++) {
         if(!get_bit(virtual_bitmap, vpn)) {
+            pthread_mutex_unlock(&lock);
             return -1;
         }
         vpn++;
@@ -421,7 +432,7 @@ int put_value(void *va, void *val, int size) {
         //Set virtual address to the next page
         va = (void*) ((unsigned long) va + PGSIZE);
     }
-
+    pthread_mutex_unlock(&lock);
     return 0;
 
     /*return -1 if put_value failed and 0 if put is successfull*/
@@ -437,6 +448,7 @@ void get_value(void *va, void *val, int size) {
     */
 
    //Number of pages needed
+   pthread_mutex_lock(&lock);
     unsigned int num_pages = (size + PGSIZE - 1) / PGSIZE;
     unsigned long bytesRemaining = size;
     unsigned long bytesToGet;
@@ -445,6 +457,7 @@ void get_value(void *va, void *val, int size) {
     unsigned long vpn = (unsigned long) va >> num_offset_bits;
     for (int i = 0; i < num_pages; i++) {
         if(!get_bit(virtual_bitmap, vpn)) {
+            pthread_mutex_unlock(&lock);
             return;
         }
         vpn++;
@@ -469,6 +482,7 @@ void get_value(void *va, void *val, int size) {
         //Set virtual address to the next page
         va = (void*) ((unsigned long) va + PGSIZE);
     }
+    pthread_mutex_unlock(&lock);
 
 }
 
@@ -555,74 +569,74 @@ void *get_next_avail_physical(int num_pages) {
     return NULL;
 }
 
-int main() {
-    set_physical_mem();
-    printf("Physical memory base: %p\n", physical_mem);
-    //print_bit_values();
+// int main() {
+//     set_physical_mem();
+//     printf("Physical memory base: %p\n", physical_mem);
+//     //print_bit_values();
 
-    // void* va1 = get_next_avail(1);
-    // void* pa1 = get_physical_addr_from_bit(next_free_page(physical_bitmap));
-    // printf("VA1: %p\n", va1);
-    // printf("PA1: %p\n", pa1);
+//     // void* va1 = get_next_avail(1);
+//     // void* pa1 = get_physical_addr_from_bit(next_free_page(physical_bitmap));
+//     // printf("VA1: %p\n", va1);
+//     // printf("PA1: %p\n", pa1);
 
-    // void* gamer1 = t_malloc(sizeof(int));
-    // printf("Did malloc, returned virtual address: %p\n", gamer1);
-    // printf("Translate VA1[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
+//     // void* gamer1 = t_malloc(sizeof(int));
+//     // printf("Did malloc, returned virtual address: %p\n", gamer1);
+//     // printf("Translate VA1[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
 
-    // void* va2 = get_next_avail(1);
-    // void* pa2 = get_physical_addr_from_bit(next_free_page(physical_bitmap));
-    // printf("VA2: %p\n", va2);
-    // printf("PA2: %p\n", pa2);
+//     // void* va2 = get_next_avail(1);
+//     // void* pa2 = get_physical_addr_from_bit(next_free_page(physical_bitmap));
+//     // printf("VA2: %p\n", va2);
+//     // printf("PA2: %p\n", pa2);
 
-    // void* gamer2 = t_malloc(sizeof(int));
-    // printf("Did malloc, returned virtual address: %p\n", gamer2);
-    // printf("Translate VA2[%p] result: %p\n", va2, (void*) *translate(page_directory, va2));
+//     // void* gamer2 = t_malloc(sizeof(int));
+//     // printf("Did malloc, returned virtual address: %p\n", gamer2);
+//     // printf("Translate VA2[%p] result: %p\n", va2, (void*) *translate(page_directory, va2));
 
-    // t_free(gamer1, sizeof(int));
-    // printf("Translate VA[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
-    // printf("Virtual bitmap at %ld: %d\n", (unsigned long) va1 >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) va1 >> num_offset_bits));
-    // printf("Physical bitmap at %ld: %d\n", (unsigned long) pa1 >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) va1 >> num_offset_bits));
+//     // t_free(gamer1, sizeof(int));
+//     // printf("Translate VA[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
+//     // printf("Virtual bitmap at %ld: %d\n", (unsigned long) va1 >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) va1 >> num_offset_bits));
+//     // printf("Physical bitmap at %ld: %d\n", (unsigned long) pa1 >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) va1 >> num_offset_bits));
 
-    char testValue[5000];
-    testValue[0] = 'a';
-    testValue[1] = 'b';
-    testValue[2] = 'c';
-    testValue[3] = 'd';
-    testValue[4] = 'e';
-    testValue[4999] = 'z';
-    testValue[4998] = 'y';
-    testValue[4997] = 'x';
-    testValue[4996] = 'w';
-    testValue[4995] = 'v';
-    char testValueBack[5000];
+//     char testValue[5000];
+//     testValue[0] = 'a';
+//     testValue[1] = 'b';
+//     testValue[2] = 'c';
+//     testValue[3] = 'd';
+//     testValue[4] = 'e';
+//     testValue[4999] = 'z';
+//     testValue[4998] = 'y';
+//     testValue[4997] = 'x';
+//     testValue[4996] = 'w';
+//     testValue[4995] = 'v';
+//     char testValueBack[5000];
 
-    void* pa1 = get_next_avail_physical(2);
-    void* va1 = t_malloc(sizeof(testValue));
-    printf("VA1: %p\n", va1);
-    printf("PA1: %p\n", pa1);
+//     void* pa1 = get_next_avail_physical(2);
+//     void* va1 = t_malloc(sizeof(testValue));
+//     printf("VA1: %p\n", va1);
+//     printf("PA1: %p\n", pa1);
 
-    // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1) >> num_offset_bits));
-    // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1)));
-    // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1 + PGSIZE) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1 + PGSIZE) >> num_offset_bits));
-    // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE)));
+//     // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1) >> num_offset_bits));
+//     // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1)));
+//     // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1 + PGSIZE) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1 + PGSIZE) >> num_offset_bits));
+//     // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE)));
 
-    printf("Translate VA1[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
-    printf("Translate VA2[%p] result: %p\n", va1 + PGSIZE, (void*) *translate(page_directory, va1 + PGSIZE));
+//     printf("Translate VA1[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
+//     printf("Translate VA2[%p] result: %p\n", va1 + PGSIZE, (void*) *translate(page_directory, va1 + PGSIZE));
     
-    put_value(va1, &testValue, sizeof(testValue));
-    get_value(va1, &testValueBack, sizeof(testValueBack));
-    for(int i = 0; i < 5; i++) {
-        printf("Test Value Back Char %d: %c\n", i, testValueBack[i]);
-        printf("Test Value Back Char %d: %c\n", sizeof(testValueBack) - i - 1, testValueBack[sizeof(testValueBack) - i - 1]);
-    }
+//     put_value(va1, &testValue, sizeof(testValue));
+//     get_value(va1, &testValueBack, sizeof(testValueBack));
+//     for(int i = 0; i < 5; i++) {
+//         printf("Test Value Back Char %d: %c\n", i, testValueBack[i]);
+//         printf("Test Value Back Char %d: %c\n", sizeof(testValueBack) - i - 1, testValueBack[sizeof(testValueBack) - i - 1]);
+//     }
 
-    t_free(va1, sizeof(testValue));
+//     t_free(va1, sizeof(testValue));
     
-    printf("Translate VA1[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
-    printf("Translate VA2[%p] result: %p\n", va1 + PGSIZE, (void*) *translate(page_directory, va1 + PGSIZE));
-    // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1) >> num_offset_bits));
-    // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1)));
-    // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1 + PGSIZE) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1 + PGSIZE) >> num_offset_bits));
-    // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE)));
+//     printf("Translate VA1[%p] result: %p\n", va1, (void*) *translate(page_directory, va1));
+//     printf("Translate VA2[%p] result: %p\n", va1 + PGSIZE, (void*) *translate(page_directory, va1 + PGSIZE));
+//     // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1) >> num_offset_bits));
+//     // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1)));
+//     // printf("Virtual bitmap at %ld: %d\n", (unsigned long) (va1 + PGSIZE) >> num_offset_bits, get_bit(virtual_bitmap, (unsigned long) (va1 + PGSIZE) >> num_offset_bits));
+//     // printf("Physical bitmap at %ld: %d\n", (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE), get_bit(physical_bitmap, (unsigned long) get_bit_position_from_pointer(pa1 + PGSIZE)));
 
-}
+// }

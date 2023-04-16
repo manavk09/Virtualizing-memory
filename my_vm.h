@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <math.h>
 #include <string.h>
+#include <pthread.h>
 
 //Assume the address space is 32 bits, so the max memory size is 4GB
 //Page size is 4KB
@@ -37,7 +38,6 @@ typedef struct tlb {
     */
    void *va;
    void *pa;
-   struct tlb *next;
 
 }tlb;
 struct tlb tlb_store;
